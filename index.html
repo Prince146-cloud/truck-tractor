@@ -1960,6 +1960,7 @@
                 gap: 1rem;
             }
 
+
             .stats-grid {
                 grid-template-columns: 1fr;
             }
@@ -2104,7 +2105,8 @@
             <div class="services-grid">
                 <div class="service-card">
                     <div class="service-image">
-                        <img src="https://i.imgur.com/FTMCWMe.jpeg" alt="Spare Parts">
+                        <!-- IMAGE UPDATED -->
+                        <img src="https://www.ukroadrunner.co.uk/wp-content/uploads/2024/04/20-Best-Selling-Auto-Parts-To-Start-Dropshipping-Today.png" alt="Spare Parts">
                         <div class="service-icon">
                             <i class="fas fa-cogs"></i>
                         </div>
@@ -2138,7 +2140,8 @@
 
                 <div class="service-card">
                     <div class="service-image">
-                        <img src="https://i.imgur.com/cJZA8gr.jpeg" alt="Trucks Selling">
+                        <!-- IMAGE UPDATED -->
+                        <img src="https://horizongo.com/wp-content/uploads/2023/08/Free-Load-Boards-975x650.jpeg" alt="Trucks Selling">
                         <div class="service-icon">
                             <i class="fas fa-truck"></i>
                         </div>
@@ -2172,7 +2175,8 @@
 
                 <div class="service-card">
                     <div class="service-image">
-                        <img src="https://i.imgur.com/xRAqaK9.jpeg" alt="Transport Logistics">
+                        <!-- IMAGE UPDATED -->
+                        <img src="https://numalis.com/wp-content/uploads/2024/02/transportation-logistic-cr-Digitalpen.jpg" alt="Transport Logistics">
                         <div class="service-icon">
                             <i class="fas fa-route"></i>
                         </div>
@@ -2509,14 +2513,16 @@
                         <label for="loginEmail">Email Address</label>
                         <div class="input-wrapper">
                             <i class="fas fa-envelope"></i>
-                            <input type="email" id="loginEmail" value="admin@trucktractor.rw" required>
+                            <!-- Removed default values for security -->
+                            <input type="email" id="loginEmail" required>
                         </div>
                     </div>
                     <div class="form-group">
                         <label for="loginPassword">Password</label>
                         <div class="input-wrapper">
                             <i class="fas fa-lock"></i>
-                            <input type="password" id="loginPassword" value="Admin@123" required>
+                            <!-- Removed default values for security -->
+                            <input type="password" id="loginPassword" required>
                         </div>
                     </div>
                     <button type="submit" class="login-btn">
@@ -2543,8 +2549,8 @@
                     </div>
                     <div class="dashboard-user">
                         <div class="user-info">
-                            <div class="user-name">Administrator</div>
-                            <div class="user-role">System Admin</div>
+                            <div class="user-name" id="adminUserName">Administrator</div>
+                            <div class="user-role" id="adminUserEmail">System Admin</div>
                         </div>
                         <button class="logout-btn" id="logoutBtn">
                             <i class="fas fa-sign-out-alt"></i> Logout
@@ -2723,6 +2729,13 @@
             if (localStorage.getItem('adminLoggedIn') === 'true') {
                 showPage('adminDashboard');
                 loadDashboardData();
+                
+                // Update user display
+                const user = JSON.parse(localStorage.getItem('adminUser'));
+                if(user && user.email) {
+                    document.getElementById('adminUserName').textContent = user.email.split('@')[0];
+                    document.getElementById('adminUserEmail').textContent = user.email;
+                }
             } else {
                 showPage('adminLoginPage');
             }
@@ -2753,7 +2766,24 @@
             
             // Load initial data
             loadProducts();
+            
+            // Check auth state on load
+            checkAuthState();
         });
+
+        // Check initial auth state
+        async function checkAuthState() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session && localStorage.getItem('adminLoggedIn') === 'true') {
+                // User has a session and was logged in as admin
+                console.log('Active admin session found.');
+                localStorage.setItem('adminUser', JSON.stringify(session.user));
+            } else {
+                // No session or not marked as admin, clear storage
+                localStorage.removeItem('adminLoggedIn');
+                localStorage.removeItem('adminUser');
+            }
+        }
 
         // Mobile Menu
         const mobileMenuBtn = document.getElementById('mobileMenuBtn');
@@ -2927,7 +2957,7 @@
 
         // ADMIN FUNCTIONS
 
-        // Login Form
+        // Login Form - UPDATED
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -2938,30 +2968,80 @@
             loginBtn.disabled = true;
             loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
 
-            // Simple authentication
-            if (email === 'admin@trucktractor.rw' && password === 'Admin@123') {
+            try {
+                // 1. Sign in with Supabase Auth
+                const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+                    email: email,
+                    password: password,
+                });
+
+                if (authError) {
+                    throw new Error(authError.message);
+                }
+
+                if (!authData.user) {
+                    throw new Error('Login failed, user not found.');
+                }
+
+                // 2. Check if the user is in the 'admins' table
+                // This assumes you have a table named 'admins' with a 'user_id' column
+                // that matches the auth.users.id
+                const { data: adminData, error: adminError } = await supabase
+                    .from('admins')
+                    .select('user_id')
+                    .eq('user_id', authData.user.id)
+                    .single(); // Get a single record
+
+                if (adminError || !adminData) {
+                    // User is authenticated but not an admin
+                    await supabase.auth.signOut(); // Sign them out
+                    throw new Error('Access Denied: You are not an authorized administrator.');
+                }
+
+                // 3. User is an admin
                 localStorage.setItem('adminLoggedIn', 'true');
-                showNotification('Login successful!', 'success');
+                localStorage.setItem('adminUser', JSON.stringify(authData.user));
+                
+                // Update dashboard header
+                document.getElementById('adminUserName').textContent = authData.user.email.split('@')[0];
+                document.getElementById('adminUserEmail').textContent = authData.user.email;
+                
+                showNotification('Login successful! Welcome Admin.', 'success');
+                
                 setTimeout(() => {
                     showPage('adminDashboard');
                     loadDashboardData();
                 }, 1000);
-            } else {
-                showNotification('Invalid credentials!', 'error');
+
+            } catch (error) {
+                console.error('Login error:', error.message);
+                showNotification(error.message || 'Invalid credentials!', 'error');
+            } finally {
                 loginBtn.disabled = false;
                 loginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login to Dashboard';
             }
         });
 
-        // Logout
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            localStorage.removeItem('adminLoggedIn');
-            showPage('mainWebsite');
-            showNotification('Logged out successfully', 'success');
-            window.scrollTo(0, 0);
+        // Logout - UPDATED
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                const { error } = await supabase.auth.signOut();
+                if (error) throw error;
+            } catch (error) {
+                console.error('Error logging out:', error.message);
+            } finally {
+                // Always clear local storage and redirect
+                localStorage.removeItem('adminLoggedIn');
+                localStorage.removeItem('adminUser');
+                showPage('mainWebsite');
+                showNotification('Logged out successfully', 'success');
+                window.scrollTo(0, 0);
+            }
         });
 
         async function loadDashboardData() {
+            // These functions will now rely on the user's Supabase session
+            // for authentication, and your RLS policies for authorization.
             await loadProducts();
             await loadMessages();
             await updateStats();
@@ -2970,6 +3050,7 @@
 
         async function loadAdminProducts() {
             try {
+                // RLS should protect this query
                 const { data, error } = await supabase
                     .from('products')
                     .select('*')
@@ -2980,7 +3061,7 @@
                 displayAdminProducts(data || []);
             } catch (error) {
                 console.error('Error loading products:', error);
-                showNotification('Failed to load products', 'error');
+                showNotification('Failed to load products: ' + error.message, 'error');
             }
         }
 
@@ -3018,6 +3099,7 @@
 
         async function loadMessages() {
             try {
+                // RLS should protect this query
                 const { data, error } = await supabase
                     .from('contact_messages')
                     .select('*')
@@ -3027,7 +3109,8 @@
 
                 displayMessages(data || []);
             } catch (error) {
-                console.error('Error loading messages:', error);
+                console.error('Error loading messages:', error.message);
+                showNotification('Failed to load messages: ' + error.message, 'error');
             }
         }
 
@@ -3063,8 +3146,12 @@
 
         async function updateStats() {
             try {
-                const { data: products } = await supabase.from('products').select('*');
-                const { data: messages } = await supabase.from('contact_messages').select('*');
+                // RLS should protect these queries
+                const { data: products, error: pError } = await supabase.from('products').select('*');
+                if (pError) throw pError;
+                
+                const { data: messages, error: mError } = await supabase.from('contact_messages').select('*');
+                if (mError) throw mError;
 
                 document.getElementById('totalProducts').textContent = products?.length || 0;
                 document.getElementById('totalMessages').textContent = messages?.length || 0;
@@ -3075,7 +3162,8 @@
                 document.getElementById('totalTrucks').textContent = trucks;
                 document.getElementById('totalParts').textContent = parts;
             } catch (error) {
-                console.error('Error updating stats:', error);
+                console.error('Error updating stats:', error.message);
+                showNotification('Failed to update stats: ' + error.message, 'error');
             }
         }
 
@@ -3105,6 +3193,7 @@
 
             try {
                 if (currentEditId) {
+                    // RLS should protect this query
                     const { error } = await supabase
                         .from('products')
                         .update(productData)
@@ -3113,6 +3202,7 @@
                     if (error) throw error;
                     showNotification('Product updated successfully!', 'success');
                 } else {
+                    // RLS should protect this query
                     const { error } = await supabase
                         .from('products')
                         .insert([productData]);
@@ -3126,12 +3216,13 @@
                 loadProducts(); // Reload main website products too
             } catch (error) {
                 console.error('Error saving product:', error);
-                showNotification('Failed to save product', 'error');
+                showNotification('Failed to save product: ' + error.message, 'error');
             }
         });
 
         async function editProduct(id) {
             try {
+                // RLS should protect this query
                 const { data, error } = await supabase
                     .from('products')
                     .select('*')
@@ -3150,27 +3241,28 @@
                 document.getElementById('productModal').classList.add('active');
             } catch (error) {
                 console.error('Error loading product:', error);
-                showNotification('Failed to load product', 'error');
+                showNotification('Failed to load product: ' + error.message, 'error');
             }
         }
 
         async function deleteProduct(id) {
-            if (!confirm('Are you sure you want to delete this product?')) return;
+            if (confirm('Are you sure you want to delete this product? This action cannot be undone.')) {
+                try {
+                    // RLS should protect this query
+                    const { error } = await supabase
+                        .from('products')
+                        .delete()
+                        .eq('id', id);
 
-            try {
-                const { error } = await supabase
-                    .from('products')
-                    .delete()
-                    .eq('id', id);
+                    if (error) throw error;
 
-                if (error) throw error;
-
-                showNotification('Product deleted successfully!', 'success');
-                loadDashboardData();
-                loadProducts(); // Reload main website products too
-            } catch (error) {
-                console.error('Error deleting product:', error);
-                showNotification('Failed to delete product', 'error');
+                    showNotification('Product deleted successfully!', 'success');
+                    loadDashboardData();
+                    loadProducts(); // Reload main website products too
+                } catch (error) {
+                    console.error('Error deleting product:', error);
+                    showNotification('Failed to delete product: ' + error.message, 'error');
+                }
             }
         }
 
