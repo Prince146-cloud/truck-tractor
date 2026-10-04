@@ -3367,7 +3367,7 @@
                         <div class="form-group" style="margin:0"><label for="newAdminPassword">Temporary password (min. 8 characters)</label><input id="newAdminPassword" type="password" minlength="8" autocomplete="new-password" required></div>
                         <div><button class="add-product-btn" id="createAdminBtn" type="submit"><i class="fas fa-user-plus"></i> Create Admin</button></div>
                     </form>
-                    <p style="color:#777;font-size:.88rem;margin-top:1rem">Account creation is handled by a secured Supabase Edge Function; never put a service-role key in this HTML file.</p>
+                    
                 </div>
 
                 <!-- Contact Messages -->
@@ -3954,28 +3954,43 @@
             }
         });
 
-        // Create an administrator through the secured Edge Function.
-        // Configure CREATE_ADMIN_FUNCTION_URL to your deployed function endpoint.
-        const CREATE_ADMIN_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/create-admin`;
+        // Create an administrator through the Supabase Edge Function.
         document.getElementById('createAdminForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const button = document.getElementById('createAdminBtn');
             const email = document.getElementById('newAdminEmail').value.trim().toLowerCase();
             const password = document.getElementById('newAdminPassword').value;
-            if (password.length < 8) { showNotification('Use a password with at least 8 characters.', 'error'); return; }
+            if (password.length < 8) {
+                showNotification('Use a password with at least 8 characters.', 'error');
+                return;
+            }
+
             button.disabled = true;
             button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+
             try {
                 const client = await ensureSupabaseClient();
                 const { data: { session }, error: sessionError } = await client.auth.getSession();
-                if (sessionError || !session?.access_token) throw new Error('Your admin session has expired. Please sign in again.');
-                const response = await fetch(CREATE_ADMIN_FUNCTION_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
-                    body: JSON.stringify({ email, password })
+                if (sessionError || !session?.access_token) {
+                    throw new Error('Your admin session has expired. Please sign in again.');
+                }
+
+                const { data: result, error: functionError } = await client.functions.invoke('create-admin', {
+                    body: { email, password }
                 });
-                const result = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(result.error || `Admin creation failed (HTTP ${response.status}). Deploy the create-admin Edge Function and configure its secrets.`);
+
+                if (functionError) {
+                    let message = functionError.message || 'Unable to contact the administrator service.';
+                    if (/failed to fetch|network|fetch/i.test(message)) {
+                        message = 'The create-admin service is not reachable. Make sure the create-admin Edge Function is deployed in this Supabase project.';
+                    }
+                    throw new Error(message);
+                }
+
+                if (!result?.success) {
+                    throw new Error(result?.error || 'Administrator account could not be created.');
+                }
+
                 document.getElementById('createAdminForm').reset();
                 showNotification(`Administrator account created for ${email}.`, 'success');
             } catch (error) {
